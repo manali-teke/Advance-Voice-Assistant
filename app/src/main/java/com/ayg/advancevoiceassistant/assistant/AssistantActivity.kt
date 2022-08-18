@@ -22,6 +22,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.StrictMode
 import android.os.StrictMode.VmPolicy
+import android.provider.AlarmClock
 import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.Telephony
@@ -47,11 +48,15 @@ import androidx.lifecycle.ViewModelProvider
 import bot.box.horology.annotation.DURATION
 import bot.box.horology.annotation.SUNSIGN
 import bot.box.horology.api.Horoscope
-import bot.box.horology.delegate.Response
 import bot.box.horology.hanshake.HorologyController
 import bot.box.horology.pojo.Zodiac
-import com.ayg.advancevoiceassistant.data.AssistantDatabase
+import com.android.volley.Request
+import com.android.volley.Response
+import com.android.volley.toolbox.JsonObjectRequest
+import com.android.volley.toolbox.StringRequest
+import com.android.volley.toolbox.Volley
 import com.ayg.advancevoiceassistant.R
+import com.ayg.advancevoiceassistant.data.AssistantDatabase
 import com.ayg.advancevoiceassistant.databinding.ActivityAssistantBinding
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -62,13 +67,13 @@ import com.kwabenaberko.openweathermaplib.model.currentweather.CurrentWeather
 import com.ml.quaterion.text2summary.Text2Summary
 import com.theartofdev.edmodo.cropper.CropImage
 import com.theartofdev.edmodo.cropper.CropImageView
-import java.io.File
-import java.io.FileNotFoundException
-import java.io.IOException
+import java.io.*
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.collections.HashMap
 import kotlin.jvm.internal.Ref.ObjectRef
+import kotlin.random.Random
 
 
 class AssistantActivity : AppCompatActivity() {
@@ -242,8 +247,8 @@ class AssistantActivity : AppCompatActivity() {
                         keeper.contains("thank") -> speak("It's my job, let me know if there is something else")
                         keeper.contains("welcome") -> speak("for what?")
                         keeper.contains("clear") -> assistantViewModel.onClear()
-                        keeper.contains("date") -> getDate()
-                        keeper.contains("time") -> getTime()
+                       // keeper.contains("date") || keeper.contains("What date is it today?")  -> getDate()
+                        keeper.contains("time") || keeper.contains("What's the time?") -> getTime()
                         keeper.contains("phone call") -> makeAPhoneCall()
                         keeper.contains("send SMS") -> sendSMS()
                         keeper.contains("read my last SMS") -> readSMS()
@@ -269,7 +274,8 @@ class AssistantActivity : AppCompatActivity() {
                         keeper.contains("weather") -> weather()
                         keeper.contains("horoscope") -> horoscope()
                         keeper.contains("medical") -> medicalApplication()
-                        keeper.contains("joke") -> joke()
+                        keeper.contains("tell me a joke") -> joke()
+                        keeper.contains("latest news") -> news()
                         keeper.contains("question") -> question()
                         keeper.contains("hello") || keeper.contains(" hi ") || keeper.contains("hey") -> speak("Hello, how can I  help you?")
                         else -> speak("Invalid command, try again")
@@ -430,6 +436,7 @@ class AssistantActivity : AppCompatActivity() {
             packageManager.getLaunchIntentForPackage(Telephony.Sms.getDefaultSmsPackage(this))
         intent?.let { startActivity(it) }
     }
+
 
     private fun openFacebook() {
         val intent = packageManager.getLaunchIntentForPackage("com.facebook.katana")
@@ -715,7 +722,12 @@ class AssistantActivity : AppCompatActivity() {
 
     private fun setAlarm()
     {
+        val openClockIntent = Intent(AlarmClock.ACTION_SET_ALARM)
+        openClockIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        openClockIntent.let { startActivity(it) }
 
+//        val intent = packageManager.
+//        intent?.let { startActivity(it) }
     }
 
     private fun medicalApplication()
@@ -758,31 +770,52 @@ class AssistantActivity : AppCompatActivity() {
 
     private fun horoscope()
     {
-        Log.d("chk", "hello")
-        val hGemini : Horoscope? = Horoscope.Zodiac(this)
-                .requestSunSign(SUNSIGN.GEMINI)
-                .requestDuration(DURATION.TODAY)
-                .showLoader(true)
-                .isDebuggable(true)
-                .fetchHoroscope()
-        val cGemini = HorologyController(object : Response {
-            override fun onResponseObtained(zodiac: Zodiac) {
-                val horoscope: String = zodiac.getHoroscope()
-                val sunsign: String = zodiac.getSunSign()
-                val date: String = zodiac.getDate()
-                Log.d("chk", horoscope+sunsign+date)
-            }
 
-            override fun onErrorObtained(errormsg: String?) {
-                speak("Can't Reach Data")
-            }
-        })
-        cGemini.requestConstellations(hGemini)
     }
 
     private fun joke()
     {
+       // val url = URL("")
+        val queue = Volley.newRequestQueue(this)
+        val url: String = "https://api.chucknorris.io/jokes/random"
 
+        // Request a string response from the provided URL.
+        val stringReq = JsonObjectRequest(
+            Request.Method.GET, url,null,
+            Response.Listener { response ->
+                var strResp = response.getString("value")
+                speak(strResp)
+                Log.d("API", strResp)
+            },
+            Response.ErrorListener {Log.d("API", "that didn't work") })
+        queue.add(stringReq)
+    }
+
+    private fun news(){
+        val keeperSplit = keeper.replace(" ".toRegex(), "").split("w").toTypedArray()
+        val category = keeperSplit[0]
+        val queue = Volley.newRequestQueue(this)
+        val url: String = "https://newsapi.org/v2/top-headlines?country=in&apiKey=db291c658b764df79236d90d85b30149"
+
+        // Request a string response from the provided URL.
+        val stringReq = object: JsonObjectRequest(
+            Request.Method.GET, url,null,
+            Response.Listener { response ->
+                var strResp = response.getJSONArray("articles")
+                var rand = Random(69)
+
+                var str = strResp.getJSONObject(rand.nextInt(strResp.length())).getString("title")
+                speak(str)
+                Log.d("API", str)
+            },
+            Response.ErrorListener {Log.d("API", "that didn't work") }){
+            override fun getHeaders(): MutableMap<String, String> {
+                var hashMap = HashMap<String, String>()
+                hashMap["User-Agent"] = "Mozilla/5.0"
+                return hashMap
+            }
+        }
+        queue.add(stringReq)
     }
 
     private fun question()
